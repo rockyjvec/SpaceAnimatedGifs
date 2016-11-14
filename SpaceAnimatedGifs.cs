@@ -1,6 +1,11 @@
 /************************************************************************************************************
     SpaceAnimagedGifs - A vanilla in-game script for playing animated gifs on LCDs
     
+    LCD Setup
+    
+    Change the font size to the smallest, and change the font to the new "monospace" one.  Change the lcdName
+    setting below to the name of your lcd.
+    
     How to load an animated gif into the game.
     
     1.  Go to http://spaceengineers.io/tools/storage-loader
@@ -18,6 +23,7 @@
     Fork on github: http://github.com/rockyjvec/SpaceAnimatedGifs
 *************************************************************************************************************/
 
+string lcdName = "GIFPlayer";
 int throttle = 5000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times.
 
 public class Decoder
@@ -491,7 +497,7 @@ void Main (string args)
     if(gif == null)
     {
         gif = new Gif(Storage);        
-        screen = GridTerminalSystem.GetBlockWithName("SpaceGameboy LCD") as IMyTextPanel;
+        screen = GridTerminalSystem.GetBlockWithName(lcdName) as IMyTextPanel;
         return;
     }
     
