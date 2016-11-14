@@ -14,6 +14,8 @@
         start playing.
         
     Note: Adjust the throttle below if you get complexity errors.
+    
+    Fork on github: http://github.com/rockyjvec/SpaceAnimatedGifs
 *************************************************************************************************************/
 
 int throttle = 5000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times.
