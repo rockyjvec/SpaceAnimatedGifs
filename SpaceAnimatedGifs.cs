@@ -245,20 +245,6 @@ public class Gif
         int sx = (int)(x * scale);
         int sy = (int)(y * scale);
 
-        if (x > LCDwidth - 1)
-        {
-            frame[x + ((LCDwidth + 1) * y)] = "\n"[0];
-            x = 0;
-            y++;
-            if (y > (LCDheight - 1))
-            {
-                frames.Add(frame);
-
-                step = mainLoop;
-                y = 0;
-                return true;
-            }
-        }
         
         bool draw = false;
         bool transparentPixel = false;
@@ -284,10 +270,25 @@ public class Gif
             draw = true;
         }
         
-        if (draw)
+        if (draw || frame[x + ((LCDwidth + 1) * y)] < '\uE100')
             frame[x + ((LCDwidth + 1) * y)] = (char)('\uE100' + (color[2] * 8 / 256) + ((color[1] * 8 / 256) * 8) + ((color[0] * 8 / 256) * 64));
 
         x += 1;
+        
+        if (x > LCDwidth - 1)
+        {
+            frame[x + ((LCDwidth + 1) * y)] = "\n"[0];
+            x = 0;
+            y++;
+            if (y > (LCDheight - 1))
+            {
+                frames.Add(frame);
+
+                step = mainLoop;
+                y = 0;
+                return true;
+            }
+        }
 
         return true;
     }
