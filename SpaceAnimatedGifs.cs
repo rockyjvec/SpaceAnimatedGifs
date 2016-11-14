@@ -202,12 +202,12 @@ public class Gif
     byte[] data;
     long counter = 0;
     byte backgroundColor;
-    bool gce = false;
+//    bool gce = false;
     int lzwMinimumCodeSize;
     byte[] lzwData;
     int lzwDataIndex = 0;
     public Func<bool> step;
-    long decodeBit = 0;
+//    long decodeBit = 0;
     byte[] output;
     int top, left, w, h;
     bool interlaceFlag;
@@ -345,14 +345,14 @@ public class Gif
         if (counter > data.Length)
             return false;
 
-        gce = false; // had graphics control extension   
+        //gce = false; // had graphics control extension   
         switch (data[counter++])
         {
             case 0x21: // extension   
                 switch (data[counter++])
                 {
                     case 0xF9: // graphic control extension   
-                        gce = true;
+                        //gce = true;
                         counter++; // Block size 0x04
                         int flags = data[counter++]; // Flags
                         // 0 -   No disposal specified. The decoder is
