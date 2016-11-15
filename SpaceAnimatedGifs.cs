@@ -23,6 +23,9 @@
     Fork on github: http://github.com/rockyjvec/SpaceAnimatedGifs
 *************************************************************************************************************/
 
+int frameWidth = 175;
+int frameHeight = 175;
+
 string lcdName = "GIFPlayer";
 int throttle = 5000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times.
 
@@ -433,8 +436,73 @@ public class Gif
 
     }
 
-    public Gif(string base64)
+    public string serialize()
     {
+        string o = "";
+        
+        o += (char)'|';
+        
+        o += LCDwidth;
+        
+        o += (char)'|';
+        
+        o += LCDheight;
+        
+        o += (char)'|';
+        
+        o += this.delays.Count;
+        
+        o += (char)'|';
+        
+        o += this.frames.Count;
+        
+        o += (char)'|';
+        
+        foreach(var delay in this.delays)
+        {
+            o += delay;
+            o += (char)'|';
+        }
+        
+        foreach(var frm in this.frames)
+        {
+            o += new string(frm);
+            o += (char)'|';
+        }
+        
+        return o;
+    }
+    
+    void unserialize(string s)
+    {
+        var parts = s.Split((char)'|');
+        
+        this.LCDwidth = Int32.Parse(parts[1]);
+        this.LCDheight = Int32.Parse(parts[2]);
+        var delays = Int32.Parse(parts[3]);
+        var frames = Int32.Parse(parts[4]);
+        
+        for(var n = 0; n < delays; n++)
+            this.delays.Add(Int32.Parse(parts[5+n]));
+        
+        for(var o = 0; o < frames; o++)
+            this.frames.Add(parts[5+delays+o].ToCharArray());
+        
+        return;
+    }
+    
+    public Gif(int fwidth, int fheight, string base64)
+    {
+        if(base64[0] == '|')
+        {
+            this.unserialize(base64);
+            this.step = delegate() {return false;};
+            return;
+        }
+        
+        this.LCDwidth = fwidth;
+        this.LCDheight = fheight;
+        
         data = Convert.FromBase64String(base64);
 
         string signature = "" + ((char)data[counter++]) + ((char)data[counter++]) + ((char)data[counter++]);
@@ -497,7 +565,7 @@ void Main (string args)
 {
     if(gif == null)
     {
-        gif = new Gif(Storage);        
+        gif = new Gif(frameWidth, frameHeight, Storage);        
         screen = GridTerminalSystem.GetBlockWithName(lcdName) as IMyTextPanel;
         return;
     }
@@ -509,6 +577,16 @@ void Main (string args)
         {
             if(!gif.step())
             {
+                if(Storage[0] != (char)'|')
+                {
+                    Storage = gif.serialize();                    
+                    Echo(gif.frames.Count + " Frames loaded from GIF.");
+                }
+                else
+                {
+                    Echo(gif.frames.Count + " Frames loaded from cache.");                    
+                }
+                
                 running = false;
                 break;
             }
