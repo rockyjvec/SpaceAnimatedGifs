@@ -4,7 +4,7 @@
     LCD Setup 
      
     Change the font size to the smallest, and change the font to the new "monospace" one.  Change the lcdName 
-    setting below to the name of your lcd. Set to display public text.
+    setting below to the name of your lcd. Set to show text on screen.
      
     How to load an animated gif into the game. 
      
@@ -19,6 +19,10 @@
         start playing. Some GIFs may not work.
          
     Note: Adjust the throttle below if you get complexity errors. 
+    
+    You can use programming block arguments to change which frame(s) are played.  Ex: "frames 1 3 5 7" will 
+    play frames 1, 3, 5 and 7, then stop.  If you add loop into the list of frames, it will play each frame until the
+loop and then loop the remaining frames. Ex: "frames 1 2 3 4 5 loop 6 7 8 9 10"
      
     Fork on github: http://github.com/rockyjvec/SpaceAnimatedGifs 
 *************************************************************************************************************/ 
@@ -26,18 +30,45 @@
 int frameWidth = 175; 
 int frameHeight = 175; 
  
-string lcdName = "GIFPlayer"; 
+string lcdName = "GIFPlayer";
+
+bool loop = true;
+
+List<int> frames = new List<int>{}; // customize which frames play.  Ex: List<int> frames = new List<int>{1,3,5,7};
+
 int throttle = 5000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times. 
  
 public Program() 
 { 
-	Runtime.UpdateFrequency = UpdateFrequency.Update1; 
+    Runtime.UpdateFrequency = UpdateFrequency.Update1; 
     screen = GridTerminalSystem.GetBlockWithName(lcdName) as IMyTextPanel;
     gif = new Gif(frameWidth, frameHeight, Storage);
 } 
 
 void Main (string args) 
-{ 
+{
+    if(args.IndexOf("frames") == 0)
+    {
+        loop = false;
+        frame = 0;
+        frames.Clear();
+        string[] frameNumbers = args.Split(' ');
+        foreach (string number in frameNumbers)
+        {
+            if(number != "frames")
+            {
+                if(number == "loop")
+                {
+                    frames.Add(-1);
+                }
+                else
+                {
+                    frames.Add(Int32.Parse(number));
+                }
+            }
+        }        
+    }
+    
     if(running) 
     { 
         int count = 0; 
@@ -62,12 +93,29 @@ void Main (string args)
         return; 
     } 
      
-    long now = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond; 
-    if(now - lastFrame > gif.delays[frame % gif.frames.Count] * 10) 
+    int currentFrame = frame;
+    if(frames.Count > 0)
+    {
+        if(frame >= frames.Count)
+        {
+            if(loop) frame = 0;
+            else frame = frames.Count - 1;
+        }
+        if(frames[frame] == -1) // loop
+        {
+            frames.RemoveRange(0, frame + 1);
+            frame = 0;
+            loop = true;
+        }
+        currentFrame = frames[frame];
+    }
+
+    long now = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+    if(now - lastFrame > gif.delays[currentFrame % gif.frames.Count] * 10) 
     { 
-        screen.WritePublicText(new String(gif.frames[frame % gif.frames.Count]), false); 
+        screen.WritePublicText(new String(gif.frames[currentFrame % gif.frames.Count]), false); 
         lastFrame = now; 
-        frame++; 
+        frame++;
     } 
 } 
 
@@ -147,7 +195,7 @@ public class Decoder
         } 
     } 
  
-	public bool decode() 
+    public bool decode() 
     { 
         if (i < pixelCount) 
         { 
@@ -300,7 +348,7 @@ public class Gif
             { 
                 draw = true; 
                 byte index = output[spot]; 
-                //	if(index < localColorTable.Length) 
+                //    if(index < localColorTable.Length) 
                 color = localColorTable[index]; 
                 if (!this.is_transparent && index == transparent)  
                 { 
@@ -470,7 +518,7 @@ public class Gif
                 step = getLzwData; 
                 break; 
             case 0x3b: // trailer    
-                       //		Console.WriteLine ("trailer found!");    
+                       //        Console.WriteLine ("trailer found!");    
                 return false; 
         } 
  
