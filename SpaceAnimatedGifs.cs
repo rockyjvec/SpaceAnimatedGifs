@@ -1,11 +1,6 @@
 /************************************************************************************************************ 
     SpaceAnimagedGifs - A vanilla in-game script for playing animated gifs on LCDs 
      
-    LCD Setup 
-     
-    Change the font size to the smallest, and change the font to the new "monospace" one.  Change the lcdName 
-    setting below to the name of your lcd. Set to show text on screen.
-     
     How to load an animated gif into the game. 
      
     1.  Go to http://spaceengineers.io/tools/storage-loader 
@@ -14,7 +9,7 @@
     4.  Copy each script under the file name on that page into the programming block in game and run the PB 
         once for each one.  (NOTE: Make sure you don't have a timer running the PB while your are doing this. 
         If the script runs more than once for any of the storage loader scripts, it won't work) 
-    5.  Load this script into the PB and run it.  No timer needed!. 
+    5.  Load this script into the PB and run it.
     6.  Wait.  After a little while (can take up to a few minutes depending on how big the gif is) the gif will 
         start playing. Some GIFs may not work.
          
@@ -27,21 +22,63 @@ loop and then loop the remaining frames. Ex: "frames 1 2 3 4 5 loop 6 7 8 9 10"
     Fork on github: http://github.com/rockyjvec/SpaceAnimatedGifs 
 *************************************************************************************************************/ 
  
-int frameWidth = 175; 
-int frameHeight = 175; 
+int frameWidth = 175; // width of the lcd
+int frameHeight = 175; // height of the lcd
  
-string lcdName = "GIFPlayer";
+string[] lcdNames = new string[] {"GIFPlayer"}; // list of LCDs to broadcast to
 
 bool loop = true;
 
 List<int> frames = new List<int>{}; // customize which frames play.  Ex: List<int> frames = new List<int>{1,3,5,7};
 
+int frameSkip = 0; // skips every frameSkip frames to increase performance.
+
 int throttle = 5000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times. 
- 
+
+/****************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*****************************************************************************/
 public Program() 
 { 
-    Runtime.UpdateFrequency = UpdateFrequency.Update1; 
-    screen = GridTerminalSystem.GetBlockWithName(lcdName) as IMyTextPanel;
+    Runtime.UpdateFrequency = UpdateFrequency.Update1;
+    foreach(string lcdName in lcdNames)
+    {
+        List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
+        GridTerminalSystem.SearchBlocksOfName(lcdName, blocks);
+        
+        if(blocks.Count > 0)
+        {
+            foreach(IMyTextPanel screen in blocks)
+            {
+                screen.ShowPublicTextOnScreen();
+                screen.SetValue("FontSize", 0.1f);
+                screen.SetValue<long>("Font", 1147350002);
+                screens.Add(screen);
+            }
+        }
+        else
+        {
+            throw new Exception("LCD named \"" + lcdName + "\" not found.");
+        }
+    }
     gif = new Gif(frameWidth, frameHeight, Storage);
 } 
 
@@ -91,7 +128,7 @@ void Main (string args)
             } 
         } 
         return; 
-    } 
+    }
      
     int currentFrame = frame;
     if(frames.Count > 0)
@@ -111,10 +148,31 @@ void Main (string args)
     }
 
     long now = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
-    if(now - lastFrame > gif.delays[currentFrame % gif.frames.Count] * 10) 
-    { 
-        screen.WritePublicText(new String(gif.frames[currentFrame % gif.frames.Count]), false); 
-        lastFrame = now; 
+    if(now - lastFrame >=  delay * 10) 
+    {        
+        bool draw = false;
+        if(lastFrame > 0 && ((now - lastFrame) - (delay * 10) < 100))
+        {
+            lastFrame = now - ((now - lastFrame) - (delay * 10));
+            draw = true;
+        }
+        else
+        {
+            if(lastFrame == 0)
+            {
+                draw = true;
+            }
+            lastFrame = now; 
+        }
+        if(draw && (frameSkip == 0 || (frame % frameSkip != 0)))
+        {
+            foreach(IMyTextPanel screen in screens)
+            {
+                screen.WritePublicText(new String(gif.frames[currentFrame % gif.frames.Count]), false);
+            }
+        }
+        delay = gif.delays[currentFrame % gif.frames.Count];
+        if(delay < 3) delay = 10; // this is how most browsers handle 0
         frame++;
     } 
 } 
@@ -647,7 +705,7 @@ public class Gif
  
 public int frame = 0; 
 public Gif gif; 
-public IMyTextPanel screen; 
+public List<IMyTextPanel> screens = new List<IMyTextPanel>();
 public bool running = true; 
 public long lastFrame  = 0; 
-
+public int delay = 0;
