@@ -18,12 +18,12 @@
     You can use programming block arguments to change which frame(s) are played.  Ex: "frames 1 3 5 7" will 
     play frames 1, 3, 5 and 7, then stop.  If you add loop into the list of frames, it will play each frame until the
 loop and then loop the remaining frames. Ex: "frames 1 2 3 4 5 loop 6 7 8 9 10"
-     
+        
     Fork on github: http://github.com/rockyjvec/SpaceAnimatedGifs 
 *************************************************************************************************************/ 
  
-int frameWidth = 350; // width of the lcd (350 for large LCDs)
-int frameHeight = 175; // height of the lcd
+int frameWidth = 356; // width of the lcd (178 for small LCDs)
+int frameHeight = 178; // height of the lcd
  
 // For a video wall, list left to right, top to bottom. Like:
 // [1][2]
@@ -37,10 +37,11 @@ bool loop = true;
 
 List<int> frames = new List<int>{}; // customize which frames play.  Ex: List<int> frames = new List<int>{1,3,5,7};
 
+bool cache = true; // permanently cache the frames from the GIF so it doesn't need to be decoded every time.
+
 int frameSkip = 0; // skips every frameSkip frames to increase performance.
 
-int throttle = 5000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times. 
-
+int throttle = 7000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times. 
 /****************************************************************************
 
 
@@ -92,6 +93,7 @@ public Program()
         }
     }
     gif = new Gif(frameWidth, frameHeight, Storage);
+    Gif.Ech = Echo;
 } 
 
 void Main (string args) 
@@ -131,17 +133,20 @@ void Main (string args)
     
     if(running) 
     { 
-        int count = 0; 
-        while (count++ < throttle) 
+        int count = 0;
+        while ((gif.maxSteps == 0 || count < gif.maxSteps) && count++ < throttle) 
         { 
             try
             {                
                 if(!gif.step()) 
                 { 
                     if(Storage[0] != (char)'|') 
-                    { 
-                        Storage = gif.serialize();                     
-                        Echo(gif.frames.Count + " Frames loaded from GIF."); 
+                    {
+                        if(cache)
+                        {
+                            Storage = gif.serialize();
+                        }
+                        Echo(gif.frames.Count + " Frames loaded from GIF ("+ gif.totalFrames+")."); 
                     } 
                     else 
                     { 
@@ -398,14 +403,18 @@ public class Decoder
  
 public class Gif 
 { 
-    Decoder decoder; 
+    bool debug = false;
+    
+    Decoder decoder;
+    
+    public int maxSteps = 0;
  
     // lSD    
     public int width; 
     public int height; 
  
-    public int LCDwidth = 175; 
-    public int LCDheight = 175; 
+    public int LCDwidth = 178; 
+    public int LCDheight = 178; 
  
     int globalColorTableSize; 
     byte[][] globalColorTable; 
@@ -433,6 +442,13 @@ public class Gif
     char[] frame, last; 
     public List<char[]> frames = new List<char[]>(); 
     public List<int> delays = new List<int>(); 
+    public int totalFrames = 0;
+    
+    public static Action<string> Ech;
+    public void Echo(string e)
+    {
+        if(debug) Ech(e);
+    }
  
     bool createFrame() 
     { 
@@ -471,14 +487,21 @@ public class Gif
             } 
         } 
  
-        if(this.restore_background  && this.last_do_not_dispose && sx < width && sy < height && !draw && !transparentPixel) 
+        if(this.restore_background && this.last_do_not_dispose && sx < width && sy < height && !draw && (!transparentPixel)) 
         { 
             draw = true; 
         } 
          
-        if (draw || frame[x + ((LCDwidth + 1) * y)] < '\uE100') 
-            frame[x + ((LCDwidth + 1) * y)] = (char)('\uE100' + (color[2] * 8 / 256) + ((color[1] * 8 / 256) * 8) + ((color[0] * 8 / 256) * 64)); 
- 
+        if (draw)
+        {
+            frame[x + ((LCDwidth + 1) * y)] = (char)('\uE100' + Math.Floor((double)color[2] * 8.0 / 256.0) + (Math.Floor((double)color[1] * 8.0 / 256.0) * 8) + (Math.Floor((double)color[0] * 8.0 / 256.0) * 64)); 
+        }
+        
+        if(frame[x + ((LCDwidth + 1) * y)] < '\uE100')
+        {
+            frame[x + ((LCDwidth + 1) * y)] = (char)('\uE100' + ((double)localColorTable[backgroundColor][2] * 8.0 / 256.0) + (((double)localColorTable[backgroundColor][1] * 8.0 / 256.0) * 8.0) + (((double)localColorTable[backgroundColor][0] * 8.0 / 256.0) * 64.0)); 
+        }
+        
         x += 1; 
          
         if (x > LCDwidth - 1) 
@@ -488,8 +511,8 @@ public class Gif
             y++; 
             if (y > (LCDheight - 1)) 
             { 
-                frames.Add(frame); 
- 
+                frames.Add(frame);
+                Ech("Frame " + frames.Count + " added.");
                 step = mainLoop; 
                 y = 0; 
                 return true; 
@@ -501,12 +524,18 @@ public class Gif
  
     bool decode() 
     { 
-        if (this.decoder.decode()) 
+        if (maxSteps == 0 && this.decoder.decode()) 
         { 
             return true; 
         } 
         else 
-        { 
+        {
+            if(maxSteps == 0)
+            {
+                maxSteps = 1;
+                return true;
+            }
+            maxSteps = 0;
             this.output = this.decoder.pixels; 
             x = 0; 
             y = 0; 
@@ -524,13 +553,15 @@ public class Gif
  
     bool decodeStart() 
     { 
-        this.decoder = new Decoder(w, h, lzwData, lzwMinimumCodeSize); 
+        this.decoder = new Decoder(w, h, lzwData, lzwMinimumCodeSize);
+        maxSteps = 0;
         step = decode; 
         return true; 
     } 
  
     bool getLzwData() 
-    { 
+    {       
+        maxSteps = 0;
         int len = data[counter++]; 
         for (int i = 0; i < len; i++) 
         { 
@@ -539,34 +570,58 @@ public class Gif
  
         if (data[counter] == 00) 
         { 
+            maxSteps = 1;
+            Echo("Starting decode.");
             counter++; 
             step = decodeStart; 
         } 
         return true; 
     } 
- 
-    bool extensionLoop() 
+/* 
+    bool applicationExtension() 
     { 
-        counter += data[counter++]; 
-        if (data[counter++] == 0x00) 
-            step = mainLoop; 
+        counter += data[counter++]; // skip application block
+        step = applicationExtensionSubBlockLoop;
         return true; 
     } 
+  */  
+    bool applicationExtensionSubBlockLoop()
+    {
+        if (data[counter++] == 0x00)
+        {
+            Echo("    exiting application extension SubBlock loop");
+            step = mainLoop; 
+        }
+        else
+        {
+            counter += data[counter-1]; // skip data sub-block
+        }
+        return true;
+    }
+    
  
     bool mainLoop() 
     { 
-        if (counter > data.Length) 
-            return false; 
+        if (counter > data.Length)
+        {
+            throw new Exception("something strange happened, GIF ended early!");            
+        }
 
         //gce = false; // had graphics control extension    
         switch (data[counter++]) 
         { 
             case 0x21: // extension    
-                switch (data[counter++]) 
+                Echo("Extension");
+                switch (data[counter++]) // which extension is it?
                 { 
-                    case 0xF9: // graphic control extension    
+                    case 0xF9: // Graphics control extension    
+                        Echo("  graphics control");
                         //gce = true; 
-                        counter++; // Block size 0x04 
+                        if(data[counter++] != 0x04) // Block size 0x04 
+                        {
+                            throw new Exception("Error in graphics control extension. Invalid block size!");
+                        }
+                        
                         int flags = data[counter++]; // Flags 
                         // 0 -   No disposal specified. The decoder is 
                         //       not required to take any action. 
@@ -587,14 +642,42 @@ public class Gif
                         // 4-7 -    To be defined. 
                         this.delays.Add(data[counter++] | (data[counter++] << 8)); // Delay Time 
                         transparent = data[counter++]; // Transparent Color Index 
-                        counter++; // Block Terminator (0x00) 
+                        if(data[counter++] != 0x00) // Block Terminator (0x00) 
+                        {
+                            throw new Exception("Error in graphics control extension.  Block terminator not found!");
+                        }
                         break; 
-                    default: 
-                        step = extensionLoop; 
-                        return true; 
+                    case 0xFF: // Application extension
+                        Echo("  application");
+//                        step = applicationExtension; 
+                        step = applicationExtensionSubBlockLoop;
+                        break;
+                    case 0xFE: // Comment extension
+                        Echo("  comment");
+                        step = applicationExtensionSubBlockLoop;
+                        break;
+                    case 0x01: // Plain text extension
+                        Echo("  plain text");
+  //                      step = applicationExtension; 
+                        step = applicationExtensionSubBlockLoop;
+                        break;
+                    default:  // Unknown extension
+                        Echo("  unknown" + data[counter-1]);
+                        step = applicationExtensionSubBlockLoop;
+                        break;
                 } 
                 break; 
-            case 0x2c: // image descriptor    
+            case 0x2c: // image descriptor 
+                if(maxSteps == 0)
+                {
+                    maxSteps = 1;
+                    counter--;
+                    return true;
+                }
+                
+                Echo("ID");
+                totalFrames++;
+
                 left = data[counter++] | (data[counter++] << 8); 
                 top = data[counter++] | (data[counter++] << 8); 
  
@@ -607,7 +690,7 @@ public class Gif
                 counter++; // skip packed field used above    
  
                 if (localColorTableFlag) 
-                { 
+                {
                     localColorTable = new byte[localColorTableSize][]; 
                     for (int i = 0; i < localColorTableSize; i++) 
                     { 
@@ -620,19 +703,25 @@ public class Gif
                         localColorTable[i][2] = data[counter++]; 
                     } 
                 } 
-                else { 
+                else 
+                { 
                     localColorTableSize = globalColorTableSize; 
                     localColorTable = globalColorTable; 
                 } 
  
                 lzwMinimumCodeSize = data[counter++]; 
                 lzwData = new byte[w * h]; 
-                lzwDataIndex = 0; 
+                lzwDataIndex = 0;
                 step = getLzwData; 
                 break; 
             case 0x3b: // trailer    
                        //        Console.WriteLine ("trailer found!");    
-                return false; 
+                return false;
+            default: 
+                throw new Exception("Unknown main case: " + data[counter - 1]);
+                //throw new Exception("something strange happened, default case: " + data[counter-1]);
+                //return true;
+                
         } 
  
         return true; 
@@ -746,7 +835,7 @@ public class Gif
             globalColorTable[1][2] = 0xFF; 
         } 
         else  
-        { 
+        {
             for (int i = 0; i < globalColorTableSize; i++) 
             { 
                 globalColorTable[i][0] = data[counter++]; 
