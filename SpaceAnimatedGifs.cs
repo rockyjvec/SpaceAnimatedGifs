@@ -22,10 +22,16 @@ loop and then loop the remaining frames. Ex: "frames 1 2 3 4 5 loop 6 7 8 9 10"
     Fork on github: http://github.com/rockyjvec/SpaceAnimatedGifs 
 *************************************************************************************************************/ 
  
-int frameWidth = 175; // width of the lcd
+int frameWidth = 350; // width of the lcd (350 for large LCDs)
 int frameHeight = 175; // height of the lcd
  
+// For a video wall, list left to right, top to bottom. Like:
+// [1][2]
+// [3][4]
 string[] lcdNames = new string[] {"GIFPlayer"}; // list of LCDs to broadcast to
+
+// If true, multiple LCDs will be treated as one big screen.  Must have same number of LCDs tall as wide.
+bool wall = false; 
 
 bool loop = true;
 
@@ -68,8 +74,14 @@ public Program()
         {
             foreach(IMyTextPanel screen in blocks)
             {
+                if(screen.CustomName != lcdName) continue;
+                
+                float fontSize = 0.1f;
+                
+                if(wall) fontSize = fontSize * (float)Math.Sqrt((double)lcdNames.Length);
+                
                 screen.ShowPublicTextOnScreen();
-                screen.SetValue("FontSize", 0.1f);
+                screen.SetValue("FontSize", fontSize);
                 screen.SetValue<long>("Font", 1147350002);
                 screens.Add(screen);
             }
@@ -106,26 +118,45 @@ void Main (string args)
         }        
     }
     
+    if(args == "toggleWall")
+    {
+        wall = !wall;
+        foreach(IMyTextPanel screen in screens)
+        {
+            float fontSize = 0.1f;            
+            if(wall) fontSize = fontSize * (float)Math.Sqrt((double)lcdNames.Length);
+            screen.SetValue("FontSize", fontSize);
+        }
+    }
+    
     if(running) 
     { 
         int count = 0; 
         while (count++ < throttle) 
         { 
-            if(!gif.step()) 
-            { 
-                if(Storage[0] != (char)'|') 
+            try
+            {                
+                if(!gif.step()) 
                 { 
-                    Storage = gif.serialize();                     
-                    Echo(gif.frames.Count + " Frames loaded from GIF."); 
+                    if(Storage[0] != (char)'|') 
+                    { 
+                        Storage = gif.serialize();                     
+                        Echo(gif.frames.Count + " Frames loaded from GIF."); 
+                    } 
+                    else 
+                    { 
+                        Echo(gif.frames.Count + " Frames loaded from cache.");                     
+                    } 
+                     
+                    running = false; 
+                    break; 
                 } 
-                else 
-                { 
-                    Echo(gif.frames.Count + " Frames loaded from cache.");                     
-                } 
-                 
-                running = false; 
-                break; 
-            } 
+            }
+            catch(Exception e)
+            {
+                Echo($"Exception: {e}\n---");
+                throw;
+            }
         } 
         return; 
     }
@@ -166,9 +197,33 @@ void Main (string args)
         }
         if(draw && (frameSkip == 0 || (frame % frameSkip != 0)))
         {
-            foreach(IMyTextPanel screen in screens)
+            /** Send the frame to the LCD(s) **/
+            if(wall)
             {
-                screen.WritePublicText(new String(gif.frames[currentFrame % gif.frames.Count]), false);
+                int size = (int)Math.Sqrt((double)screens.Count);
+                int wide = frameWidth / size;
+                int tall = frameHeight / size;
+                for(int y = 0; y < size; y++)
+                {
+                    int yOffset = y * tall * (frameWidth + 1);
+                    for(int x = 0; x < size; x++)
+                    {
+                        string output = "";
+                        int xOffset = yOffset + x * wide;
+                        for(int line = 0; line < frameHeight / size; line++)
+                        {
+                            output += (new String(gif.frames[currentFrame % gif.frames.Count], xOffset + line * (frameWidth + 1), wide)) + "\n";
+                        }
+                        screens[y*size+x].WritePublicText(output, false);
+                    }
+                }
+            }                
+            else
+            {
+                foreach(IMyTextPanel screen in screens)
+                {
+                    screen.WritePublicText(new String(gif.frames[currentFrame % gif.frames.Count]), false);
+                }
             }
         }
         delay = gif.delays[currentFrame % gif.frames.Count];
@@ -179,7 +234,7 @@ void Main (string args)
 
 public class Decoder 
 { 
-    int MaxStackSize = 4096; 
+    int MaxStackSize = 8192; 
     int width = 0; 
     int height = 0; 
  
