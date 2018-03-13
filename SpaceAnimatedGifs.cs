@@ -37,11 +37,11 @@ bool loop = true;
 
 List<int> frames = new List<int>{}; // customize which frames play.  Ex: List<int> frames = new List<int>{1,3,5,7};
 
-bool cache = true; // permanently cache the frames from the GIF so it doesn't need to be decoded every time.
+bool cache = false; // permanently cache the frames from the GIF so it doesn't need to be decoded every time.
 
 int frameSkip = 0; // skips every frameSkip frames to increase performance.
 
-int throttle = 7000; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times. 
+int throttle = 1700; // Set this lower to prevent complexity errors.  Set it higher to decrease loading times. 
 /****************************************************************************
 
 
@@ -85,6 +85,8 @@ public Program()
                 screen.SetValue("FontSize", fontSize);
                 screen.SetValue<long>("Font", 1147350002);
                 screens.Add(screen);
+                
+                screen.WritePublicText("", false);
             }
         }
         else
@@ -94,6 +96,7 @@ public Program()
     }
     gif = new Gif(frameWidth, frameHeight, Storage);
     Gif.Ech = Echo;
+    Decoder.Ech = Echo;
 } 
 
 void Main (string args) 
@@ -114,10 +117,27 @@ void Main (string args)
                 }
                 else
                 {
-                    frames.Add(Int32.Parse(number));
+                    string[] range = number.Split('-');
+                    
+                    if(range.Length == 1)
+                    {
+                        frames.Add(Int32.Parse(number));                        
+                    }
+                    else if(range.Length == 2)
+                    {
+                        int min = Int32.Parse(range[0]);
+                        int max = Int32.Parse(range[1]);
+                        
+                        for(int r = min; r <= max && max >= min; r++)
+                        {
+                            frames.Add(r);
+                        }
+                    }
                 }
             }
-        }        
+        }
+        
+        Echo("Frames updated.");
     }
     
     if(args == "toggleWall")
@@ -239,164 +259,137 @@ void Main (string args)
 
 public class Decoder 
 { 
-    int MaxStackSize = 8192; 
-    int width = 0; 
-    int height = 0; 
- 
-    int dataSize = 0; 
- 
-    int NullCode = -1; 
-    int pixelCount = 0; 
-    public byte[] pixels; 
-    int codeSize; 
-    int clearFlag; 
-    int endFlag; 
-    int available; 
+    bool debug = false;
+    
+    public byte[] pixels;
+    int currentPixel = 0;
+    
+    Dictionary<int,byte[]> codeTable;
+
+    int minCodeSize; 
+    int codeSize;
  
     int code; 
-    int old_code; 
-    int code_mask; 
-    int bits; 
+    int previousCode = -1;
+    int clearCode;
+    int endCode;
+    int nextCode;
+  
  
-    int[] prefix; 
-    int[] suffix; 
-    int[] pixelStack; 
+    BitArray buffer;
+    int bitIndex = 0;
  
-    int top; 
-    int count; 
-    int bi; 
-    int i; 
- 
-    int data; 
-    int first; 
-    int inCode; 
- 
-    byte[] buffer; 
- 
+    public static Action<string> Ech;
+    
+    public void Echo(string e)
+    {
+        if(debug) Ech(e);
+    }
+    
     public Decoder(int width, int height, byte[] buffer, int minCodeSize) 
     { 
-        this.buffer = buffer; 
-        this.width = width; 
-        this.height = height; 
-        this.dataSize = minCodeSize; 
+        this.codeTable = new Dictionary<int,byte[]>();
+        this.buffer = new BitArray(buffer); 
+        this.minCodeSize = minCodeSize; 
  
-        this.NullCode = -1; 
-        this.pixelCount = width * height; 
-        this.pixels = new byte[pixelCount]; 
-        this.codeSize = dataSize + 1; 
-        this.clearFlag = 1 << dataSize; 
-        this.endFlag = clearFlag + 1; 
-        this.available = endFlag + 1; 
+        this.codeSize = minCodeSize + 1;
+        this.clearCode = 1 << minCodeSize; // 2 ^ minCodeSize
+        this.endCode = clearCode + 1;
+        this.nextCode = endCode + 1;
  
-        this.code = NullCode; 
-        this.old_code = NullCode; 
-        this.code_mask = (1 << codeSize) - 1; 
-        this.bits = 0; 
- 
-        this.prefix = new int[MaxStackSize]; 
-        this.suffix = new int[MaxStackSize]; 
-        this.pixelStack = new int[MaxStackSize + 1]; 
- 
-        this.top = 0; 
-        this.count = buffer.Length; 
-        this.bi = 0; 
-        this.i = 0; 
- 
-        this.data = 0; 
-        this.first = 0; 
-        this.inCode = NullCode; 
- 
-        for (code = 0; code < clearFlag; code++) 
-        { 
-            prefix[code] = 0; 
-            suffix[code] = (byte)code; 
-        } 
+        this.pixels = new byte[width*height]; 
     } 
  
     public bool decode() 
-    { 
-        if (i < pixelCount) 
-        { 
-            if (top == 0) 
-            { 
-                if (bits < codeSize) 
-                { 
-/*                    if (count == 0) 
-                    { 
-                        //    buffer = ReadData(); 
-                        //    count = buffer.Length;                           
-                        if (count == 0) 
-                        { 
-                            //throw new Exception("got here"); 
-                            return false; 
-                        } 
-                        bi = 0; 
-                    }*/ 
-                    data += buffer[bi] << bits; 
-                    bits += 8; 
-                    bi++; 
-                    count--; 
-                    return true; 
-                } 
-                code = data & code_mask; 
-                data >>= codeSize; 
-                bits -= codeSize; 
- 
- 
-                if (code > available || code == endFlag) 
-                { 
-                    return false; 
-                } 
-                if (code == clearFlag) 
-                { 
-                    codeSize = dataSize + 1; 
-                    code_mask = (1 << codeSize) - 1; 
-                    available = clearFlag + 2; 
-                    old_code = NullCode; 
-                    return true; 
-                } 
-                if (old_code == NullCode) 
-                { 
-                    pixelStack[top++] = suffix[code]; 
-                    old_code = code; 
-                    first = code; 
-                    return true; 
-                } 
-                inCode = code; 
-                if (code == available) 
-                { 
-                    pixelStack[top++] = (byte)first; 
-                    code = old_code; 
-                } 
-                while (code > clearFlag) 
-                { 
-                    pixelStack[top++] = suffix[code]; 
-                    code = prefix[code]; 
-                } 
-                first = suffix[code]; 
-                if (available > MaxStackSize) 
-                { 
-                    return false; 
-                } 
-                pixelStack[top++] = suffix[code]; 
-                prefix[available] = old_code; 
-                suffix[available] = first; 
-                available++; 
-                if (available == code_mask + 1 && available < MaxStackSize) 
-                { 
-                    codeSize++; 
-                    code_mask = (1 << codeSize) - 1; 
-                } 
-                old_code = inCode; 
+    {
+        previousCode = code;
+        
+        // get code from buffer bitstream
+        code = 0;
+        for(int bit = 0; bit < codeSize; bit++)
+        {
+            if(buffer[bitIndex+bit])
+            {
+                code += 1 << ( bit);
+            }
+        }
+        Echo($"CODE: {code}");
+        bitIndex += codeSize;
+        if(code == clearCode)
+        {
+            // initialize codeTable
+            codeSize = minCodeSize + 1;
+            codeTable.Clear();
+            nextCode = endCode + 1;
+            for (code = 0; code < clearCode + 2; code++) 
+            {
+                codeTable.Add((int)code, new byte[1]{(byte)code});
             } 
-            top--; 
-            pixels[i++] = (byte)pixelStack[top]; 
-            return true; 
-        } 
-        else 
-        { 
-            return false; 
-        } 
+        }
+        else if(code == endCode)
+        {
+            return false; // stop looping, done.
+        }
+        else
+        {           
+            byte[] previous;
+            byte[] newRow;
+            byte[] row;
+            
+            if(codeTable.TryGetValue(code, out row)) // it was in the table
+            {
+                Echo("In"+previousCode);
+                Array.Copy(row, 0, pixels, currentPixel, row.Length);
+                currentPixel += row.Length;
+                
+                if(previousCode != clearCode && codeTable.TryGetValue((int)previousCode, out previous))
+                {
+                    newRow = new byte[previous.Length + 1];
+                    Array.Copy(previous, 0, newRow, 0, previous.Length);
+                    newRow[previous.Length] = row[0];
+                    if(nextCode < 4096)
+                    {                        
+                        Echo($"Adding {nextCode} " + String.Join(",",newRow));
+                        codeTable.Add((int)nextCode++, newRow);
+
+                        if(nextCode > (1 << codeSize) - 1 && codeSize < 12) 
+                        {
+                            codeSize++;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                Echo("Out");
+
+                if(previousCode != clearCode && codeTable.TryGetValue((int)previousCode, out previous))
+                {
+                    newRow = new byte[previous.Length + 1];
+                    Array.Copy(previous, 0, newRow, 0, previous.Length);
+                    newRow[previous.Length] = previous[0];
+                    
+                    if(nextCode < 4096)
+                    {
+                        Echo($"Adding {nextCode} " + String.Join(",",newRow));
+                        codeTable.Add((int)nextCode++, newRow);
+
+                        if(nextCode > (1 << codeSize) - 1 && codeSize < 12) 
+                        {
+                            codeSize++;                            
+                        }
+                    }
+                    
+                    Array.Copy(newRow, 0, pixels, currentPixel, newRow.Length);
+                    currentPixel += newRow.Length;
+                }
+
+            }           
+        }
+        
+        previousCode = code;
+
+        return true; // continue looping.
     } 
  
 } 
@@ -437,7 +430,10 @@ public class Gif
     bool is_transparent = false; 
     bool restore_background = false; 
     bool do_not_dispose = false; 
-    bool last_do_not_dispose = false; 
+    bool last_do_not_dispose = false;
+    
+    
+    int[,] floydSteinberg;
  
     char[] frame, last; 
     public List<char[]> frames = new List<char[]>(); 
@@ -449,10 +445,52 @@ public class Gif
     {
         if(debug) Ech(e);
     }
+    
+    int error = 0;
+    
+    char getColor(int r, int g, int b, int index)
+    {
+        int rresult = (r+error+floydSteinberg[index % (LCDwidth +1),0]) * 7 / 255;
+        int rback = rresult * 255 / 7;
+        int rerror = r - rback;
+        if(rresult > 7) rresult = 7;
+        if(rresult < 0) rresult = 0;
+
+        int gresult = (g+floydSteinberg[index % (LCDwidth +1),1]) * 7 / 255;
+        int gback = gresult * 255 / 7;
+        int gerror = g - gback;
+        if(gresult > 7) gresult = 7;
+        if(gresult < 0) gresult = 0;
+
+        int bresult = (b+floydSteinberg[index % (LCDwidth +1),2]) * 7 / 255;
+        int bback = bresult * 255 / 7;
+        int berror = b - bback;
+        if(bresult > 7) bresult = 7;
+        if(bresult < 0) bresult = 0;
+
+        floydSteinberg[(index + 1) % (LCDwidth + 1),0] = rerror * 7 / 16;
+        floydSteinberg[(index + 1) % (LCDwidth + 1),1] = gerror * 7 / 16;
+        floydSteinberg[(index + 1) % (LCDwidth + 1),2] = berror * 7 / 16;
+
+        floydSteinberg[(index + LCDwidth - 1) % (LCDwidth + 1),0] = rerror * 3 / 16;
+        floydSteinberg[(index + LCDwidth - 1) % (LCDwidth + 1),1] = gerror * 3 / 16;
+        floydSteinberg[(index + LCDwidth - 1) % (LCDwidth + 1),2] = berror * 3 / 16;
+
+        floydSteinberg[(index + LCDwidth) % (LCDwidth + 1),0] = rerror * 5 / 16;
+        floydSteinberg[(index + LCDwidth) % (LCDwidth + 1),1] = gerror * 5 / 16;
+        floydSteinberg[(index + LCDwidth) % (LCDwidth + 1),2] = berror * 5 / 16;
+
+        floydSteinberg[(index + LCDwidth + 1) % (LCDwidth + 1),0] = rerror * 1 / 16;
+        floydSteinberg[(index + LCDwidth + 1) % (LCDwidth + 1),1] = gerror * 1 / 16;
+        floydSteinberg[(index + LCDwidth + 1) % (LCDwidth + 1),2] = berror * 1 / 16;
+        
+        return (char)('\uE100' + bresult + gresult * 8 + rresult * 64);
+    }
  
     bool createFrame() 
     { 
         byte[] color = localColorTable[backgroundColor]; 
+        byte[] bgcolor = localColorTable[backgroundColor]; 
          
         float scale = 1; 
         if (width > height) 
@@ -469,7 +507,6 @@ public class Gif
  
          
         bool draw = false; 
-        bool transparentPixel = false; 
         if (sx >= left && sx < left + w && sy >= top && sy < top + h) 
         { 
             int spot = ((sy - top) * (w)) + (sx - left); 
@@ -477,31 +514,24 @@ public class Gif
             { 
                 draw = true; 
                 byte index = output[spot]; 
-                //    if(index < localColorTable.Length) 
                 color = localColorTable[index]; 
-                if (!this.is_transparent && index == transparent)  
+                if (this.is_transparent && index == transparent)  
                 { 
-                    transparentPixel = true; 
                     draw = false; 
                 } 
             } 
         } 
  
-        if(this.restore_background && this.last_do_not_dispose && sx < width && sy < height && !draw && (!transparentPixel)) 
-        { 
-            draw = true; 
-        } 
-         
-        if (draw)
+        if(this.restore_background && !draw)
         {
-            frame[x + ((LCDwidth + 1) * y)] = (char)('\uE100' + Math.Floor((double)color[2] * 8.0 / 256.0) + (Math.Floor((double)color[1] * 8.0 / 256.0) * 8) + (Math.Floor((double)color[0] * 8.0 / 256.0) * 64)); 
+            frame[x + ((LCDwidth + 1) * y)] = getColor(bgcolor[0], bgcolor[1], bgcolor[2], y * LCDwidth + x);
         }
-        
-        if(frame[x + ((LCDwidth + 1) * y)] < '\uE100')
+  
+        if (draw || frame[x + ((LCDwidth + 1) * y)] < '\uE100')
         {
-            frame[x + ((LCDwidth + 1) * y)] = (char)('\uE100' + ((double)localColorTable[backgroundColor][2] * 8.0 / 256.0) + (((double)localColorTable[backgroundColor][1] * 8.0 / 256.0) * 8.0) + (((double)localColorTable[backgroundColor][0] * 8.0 / 256.0) * 64.0)); 
+            frame[x + ((LCDwidth + 1) * y)] = getColor(color[0], color[1], color[2], y * LCDwidth + x); 
         }
-        
+              
         x += 1; 
          
         if (x > LCDwidth - 1) 
@@ -512,7 +542,14 @@ public class Gif
             if (y > (LCDheight - 1)) 
             { 
                 frames.Add(frame);
-                Ech("Frame " + frames.Count + " added.");
+                Ech("Frame " + frames.Count + " added\ntransparent: " + is_transparent + "\nrestore_background: " + restore_background + "\ndo_not_dispose: " + do_not_dispose + " last_do_not_dispose: " + last_do_not_dispose);
+//                if(frames.Count > 9) return false;
+                // reset state?
+                is_transparent = false; 
+                restore_background = false; 
+                do_not_dispose = false; 
+                last_do_not_dispose = false; 
+                
                 step = mainLoop; 
                 y = 0; 
                 return true; 
@@ -520,53 +557,54 @@ public class Gif
         } 
  
         return true; 
-    } 
+    }
+    
+    bool decodeFinish()
+    {
+        maxSteps = 0;
+        this.output = this.decoder.pixels; 
+        x = 0; 
+        y = 0; 
+
+
+        if (last == null) last = new char[(LCDwidth + 1) * LCDheight]; 
+        if (frame != null) last = frame;
+        frame = new char[(LCDwidth + 1) * LCDheight]; 
+        Array.Copy(last, frame, frame.Length); 
+       
+        step = createFrame; 
+        return true; 
+    }
  
     bool decode() 
     { 
-        if (maxSteps == 0 && this.decoder.decode()) 
-        { 
+        maxSteps = 2000;
+        if (this.decoder.decode()) 
+        {
             return true; 
         } 
         else 
         {
-            if(maxSteps == 0)
-            {
-                maxSteps = 1;
-                return true;
-            }
-            maxSteps = 0;
-            this.output = this.decoder.pixels; 
-            x = 0; 
-            y = 0; 
- 
- 
-            if (last == null) last = new char[(LCDwidth + 1) * LCDheight]; 
-            if (frame != null) last = frame; 
-            frame = new char[(LCDwidth + 1) * LCDheight]; 
-            Array.Copy(last, frame, frame.Length); 
- 
-            step = createFrame; 
-            return true; 
+            maxSteps = 1;
+            step = decodeFinish;
+            return true;
         } 
     } 
  
     bool decodeStart() 
     { 
         this.decoder = new Decoder(w, h, lzwData, lzwMinimumCodeSize);
-        maxSteps = 0;
-        step = decode; 
+        step = decode;
         return true; 
     } 
  
     bool getLzwData() 
     {       
         maxSteps = 0;
-        int len = data[counter++]; 
-        for (int i = 0; i < len; i++) 
-        { 
-            lzwData[lzwDataIndex++] = data[counter++]; 
-        } 
+        int len = data[counter++];
+        Array.Copy(data, counter, lzwData, lzwDataIndex, len);
+        lzwDataIndex += len;
+        counter += len;
  
         if (data[counter] == 00) 
         { 
@@ -623,21 +661,28 @@ public class Gif
                         }
                         
                         int flags = data[counter++]; // Flags 
-                        // 0 -   No disposal specified. The decoder is 
+
+                        // 1 -   Transparent flag
+                        this.is_transparent = (flags & 0x1) > 0; 
+
+                        // 2 -   User Input flag (unused)
+                        
+                        // 3-5 - Disposal Method
+
+                        // 3.0 -   No disposal specified. The decoder is 
                         //       not required to take any action. 
-                        // 1 -   Do not dispose. The graphic is to be left 
+                        // 3.1 -   Do not dispose. The graphic is to be left 
                         //       in place. 
                         this.last_do_not_dispose = this.do_not_dispose; 
-                        this.do_not_dispose = (flags & 0x2) > 0; 
+                        this.do_not_dispose = (flags & 0x4) > 0; 
                          
-                        // 2 -   Restore to background color. The area used by the 
+                        // 3.2 -   Restore to background color. The area used by the 
                         //       graphic must be restored to the background color. 
-                        this.restore_background = (flags & 0x4) > 0; 
+                        this.restore_background = (flags & 0x8) > 0; 
                          
-                        // 3 -   Restore to previous. The decoder is required to 
+                        // 3.3 -   Restore to previous. The decoder is required to 
                         //       restore the area overwritten by the graphic with 
                         //       what was there prior to rendering the graphic. 
-                        this.is_transparent = (flags & 0x8) > 0; 
  
                         // 4-7 -    To be defined. 
                         this.delays.Add(data[counter++] | (data[counter++] << 8)); // Delay Time 
@@ -682,7 +727,8 @@ public class Gif
                 top = data[counter++] | (data[counter++] << 8); 
  
                 w = data[counter++] | (data[counter++] << 8); 
-                h = data[counter++] | (data[counter++] << 8); 
+                h = data[counter++] | (data[counter++] << 8);
+                
                 bool localColorTableFlag = (data[counter] & 0x80) > 0; 
                 interlaceFlag = (data[counter] & 0x40) > 0; 
                 bool sortFlag = (data[counter] & 0x20) > 0; 
@@ -818,7 +864,8 @@ public class Gif
         byte aspectRatio = data[counter++]; 
  
         globalColorTable = new byte[globalColorTableSize][]; 
- 
+        floydSteinberg = new int[LCDwidth + 1,3]; // initialize dither array
+
         for (int i = 0; i < globalColorTableSize; i++) 
         { 
             globalColorTable[i] = new byte[3]; 
